@@ -1,0 +1,135 @@
+default:
+  tags:
+  - dw-ccc-devt
+
+variables:
+  DOCKER_IMAGE: docker:27.5.1@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
+
+stages:
+- test
+- build_publish
+
+sast:
+  stage: test
+  variables:
+    #Excludes file pathways from SAST scanning that are only used for informative purposes to prevent false positives
+    # SAST_EXCLUDED_PATHS: 
+include:
+- template: Security/SAST.gitlab-ci.yml
+- template: Security/Secret-Detection.gitlab-ci.yml
+- template: Jobs/Container-Scanning.gitlab-ci.yml
+
+#Required naming 'container scanning' scans api Dockerfile
+container_scanning:
+  variables:
+    CS_DOCKERFILE_PATH: "testautomation/ta-middleware-java/docker/API.Dockerfile"
+    CS_IMAGE: '$DOCKER_IMAGE'
+    GIT_STRATEGY: "fetch"
+
+container_scanning_nectar:
+  extends: container_scanning
+  variables:
+    CS_DOCKERFILE_PATH: "testautomation/ta-middleware-java/docker/Nectar.Dockerfile"
+
+container_scanning_test_complete:
+  extends: container_scanning
+  variables:
+    CS_DOCKERFILE_PATH: "testautomation/ta-middleware-java/docker/TestComplete.Dockerfile"
+
+container_scanning_zephyr:
+  extends: container_scanning
+  variables:
+    CS_DOCKERFILE_PATH: "testautomation/ta-middleware-java/docker/Zephyr.Dockerfile"
+
+build_and_publish_images_development:
+  image: '$DOCKER_IMAGE'
+  stage: build_publish
+  services:
+  - '$DOCKER_IMAGE'
+  script: |
+    docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+
+    docker build -f docker/API.Dockerfile -t $CI_REGISTRY_IMAGE/api-connector-dev:$CI_COMMIT_SHORT_SHA -t $CI_REGISTRY_IMAGE/api-connector-dev:latest ./
+    docker build -f docker/Zephyr.Dockerfile -t $CI_REGISTRY_IMAGE/zephyr-connector-dev:$CI_COMMIT_SHORT_SHA -t $CI_REGISTRY_IMAGE/zephyr-connector-dev:latest ./
+    docker build -f docker/Nectar.Dockerfile -t $CI_REGISTRY_IMAGE/nectar-connector-dev:$CI_COMMIT_SHORT_SHA -t $CI_REGISTRY_IMAGE/nectar-connector-dev:latest ./
+    docker build -f docker/TestComplete.Dockerfile -t $CI_REGISTRY_IMAGE/test-complete-connector-dev:$CI_COMMIT_SHORT_SHA -t $CI_REGISTRY_IMAGE/test-complete-connector-dev:latest ./
+
+    docker create --name api-connector-test-container $CI_REGISTRY_IMAGE/api-connector-dev:$CI_COMMIT_SHORT_SHA
+    docker cp api-connector-test-container:/test-reports ./test-reports-api-connector
+    docker rm api-connector-test-container
+
+    docker create --name nectar-connector-test-container $CI_REGISTRY_IMAGE/zephyr-connector-dev:$CI_COMMIT_SHORT_SHA
+    docker cp nectar-connector-test-container:/test-reports ./test-reports-nectar-connector
+    docker rm nectar-connector-test-container
+
+    docker create --name zephyr-connector-test-container $CI_REGISTRY_IMAGE/nectar-connector-dev:$CI_COMMIT_SHORT_SHA
+    docker cp zephyr-connector-test-container:/test-reports ./test-reports-zephyr-connector
+    docker rm zephyr-connector-test-container
+
+    docker create --name test-complete-connector-test-container $CI_REGISTRY_IMAGE/test-complete-connector-dev:$CI_COMMIT_SHORT_SHA
+    docker cp test-complete-connector-test-container:/test-reports ./test-reports-test-complete-connector
+    docker rm test-complete-connector-test-container
+
+    echo "Detected current branch as 'development' or 'feature' - pushing images tagged as 'dev' to container registry"
+
+    docker push --all-tags $CI_REGISTRY_IMAGE/api-connector-dev
+    docker push --all-tags $CI_REGISTRY_IMAGE/zephyr-connector-dev
+    docker push --all-tags $CI_REGISTRY_IMAGE/nectar-connector-dev
+    docker push --all-tags $CI_REGISTRY_IMAGE/test-complete-connector-dev
+
+  artifacts:
+    paths:
+      - ./test-reports-api-connector
+      - ./test-reports-nectar-connector
+      - ./test-reports-zephyr-connector
+      - ./test-reports-test-complete-connector
+    reports:
+      junit: 
+        - ./test-reports-api-connector/*.xml
+        - ./test-reports-nectar-connector/*.xml
+        - ./test-reports-zephyr-connector/*.xml
+        - ./test-reports-test-complete-connector/*.xml
+
+  only:
+    refs:
+      - development
+      - /^feature\//
+
+build_and_publish_images_main:
+  image: '$DOCKER_IMAGE'
+  stage: build_publish
+  services:
+  - '$DOCKER_IMAGE'
+  script: |
+    docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+
+    docker build -f docker/API.Dockerfile -t $CI_REGISTRY_IMAGE/api-connector:$CI_COMMIT_SHORT_SHA -t $CI_REGISTRY_IMAGE/api-connector:latest ./
+    docker build -f docker/Zephyr.Dockerfile -t $CI_REGISTRY_IMAGE/zephyr-connector:$CI_COMMIT_SHORT_SHA -t $CI_REGISTRY_IMAGE/zephyr-connector:latest ./
+    docker build -f docker/Nectar.Dockerfile -t $CI_REGISTRY_IMAGE/nectar-connector:$CI_COMMIT_SHORT_SHA -t $CI_REGISTRY_IMAGE/nectar-connector:latest ./
+    docker build -f docker/TestComplete.Dockerfile -t $CI_REGISTRY_IMAGE/test-complete-connector:$CI_COMMIT_SHORT_SHA -t $CI_REGISTRY_IMAGE/test-complete-connector:latest ./
+
+    docker create --name api-connector-test-container $CI_REGISTRY_IMAGE/api-connector:$CI_COMMIT_SHORT_SHA
+    docker cp api-connector-test-container:/test-reports ./test-reports-api-connector
+    docker rm api-connector-test-container
+
+    docker create --name nectar-connector-test-container $CI_REGISTRY_IMAGE/zephyr-connector:$CI_COMMIT_SHORT_SHA
+    docker cp nectar-connector-test-container:/test-reports ./test-reports-nectar-connector
+    docker rm nectar-connector-test-container
+
+    docker create --name zephyr-connector-test-container $CI_REGISTRY_IMAGE/nectar-connector:$CI_COMMIT_SHORT_SHA
+    docker cp zephyr-connector-test-container:/test-reports ./test-reports-zephyr-connector
+    docker rm zephyr-connector-test-container
+
+    docker create --name test-complete-connector-test-container $CI_REGISTRY_IMAGE/test-complete-connector:$CI_COMMIT_SHORT_SHA
+    docker cp test-complete-connector-test-container:/test-reports ./test-reports-test-complete-connector
+    docker rm test-complete-connector-test-container
+
+    echo "Detected current branch as 'main' - pushing images to container registry"
+
+    docker push --all-tags $CI_REGISTRY_IMAGE/api-connector
+    docker push --all-tags $CI_REGISTRY_IMAGE/zephyr-connector
+    docker push --all-tags $CI_REGISTRY_IMAGE/nectar-connector
+    docker push --all-tags $CI_REGISTRY_IMAGE/test-complete-connector
+  only:
+    refs:
+      - main
