@@ -1,0 +1,77 @@
+Installation from fresh VM
+
+To perform a fresh install of the Test Automation Middleware on a new virtual machine, follow the steps below:
+SSH onto the VM to perform the remaining steps.
+Allow inbound TCP traffic on port 8080 by running the commands below:
+
+
+
+sudo firewall-cmd --zone=public --permanent --add-port=8080/tcp
+sudo firewall-cmd --reload
+To prevent user processes from being killed once the user session ends (and the systemd processes to run as the user), run the command below:
+
+
+
+loginctl enable-linger $UID
+Install podman
+
+
+
+sudo dnf -y update
+sudo dnf install -y @container-tools
+Install podman-compose by running the command below:
+
+
+
+pip3 install podman-compose --user
+Create directory for deployment files
+
+
+
+sudo mkdir -p /var/middleware
+sudo chown -R testautomation:testautomation /var/middleware
+Copy over the source code for some files that are needed. Note this needs to be done from the Mac side. Note this assumes that the ta-middleware code
+
+
+
+scp -r ~/git/dwp/digital-channels-contact/contact2/testautomation/ta-ansible/roles/ensure_middleware_install/deployment testautomation@10.87.123.10:/var/middleware
+Create container storage directory and set config to use it
+
+
+
+mkdir -p ~/.config/containers
+cp /var/middleware/deployment/storage.conf ~/.config/containers
+sudo chown testautomation:testautomation /var/lib/containers
+Copy over the user mode systemd unit file for each container
+
+
+
+mkdir -p ~/.config/systemd/user
+cp /var/middleware/deployment/systemd/middleware_api_1.service ~/.config/systemd/user/middleware_api_1.service
+cp /var/middleware/deployment/systemd/middleware_zephyr-connector_1.service ~/.config/systemd/user/middleware_zephyr-connector_1.service
+cp /var/middleware/deployment/systemd/middleware_nectar-connector_1.service ~/.config/systemd/user/middleware_nectar-connector_1.service
+cp /var/middleware/deployment/systemd/middleware_test-complete-connector_1.service ~/.config/systemd/user/middleware_test-complete-connector_1.service
+Edit the systemd files, add the environment variables for the credentials.
+Create the podman network 
+
+
+
+podman network create middleware_default
+Login to gitlab repo so that the containers can be pulled. Pass in the relevant credentials
+
+
+
+podman login registry.gitlab.com
+Enable all of the created services to ensure they start on the next boot.
+
+
+
+systemctl --user enable middleware_api_1
+systemctl --user enable middleware_zephyr-connector_1
+systemctl --user enable middleware_nectar-connector_1
+systemctl --user enable middleware_test-complete-connector_1
+Store the git lab token so that podman can authenticate and pull the containers if it needs them
+
+
+
+podman login registry.gitlab.com  -u {{username}} -p '{{password}}' --authfile=${HOME}/.docker/config.json
