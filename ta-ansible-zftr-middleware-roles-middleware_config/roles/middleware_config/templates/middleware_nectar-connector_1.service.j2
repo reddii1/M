@@ -1,0 +1,46 @@
+[Unit]
+Description=Podman container-middleware_nectar-connector_1.service
+Documentation=man:podman-generate-systemd(1)
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=%t/containers
+
+[Service]
+Environment=PODMAN_SYSTEMD_UNIT=%n
+Environment=DB_HOST={{ hostvars['localhost']['psqlfs_name'] }} DB_NAME=test_orchestration_java_{{ lookup('env', 'ENVIRONMENT') }} DB_USERNAME={{ hostvars['localhost']['psql_db_user'] }} DB_PASSWORD={{ hostvars['localhost']['psql_db_pass'] }} NECTAR_URL_TEMPLATE=http://%%s:8080/o/nectarcx-rest HOSTS_PASSWORD_ENCRYPTION_KEY={{ hostvars['localhost']['host_pass_encr_key'] }} NECTAR_SHOULD_RETRY_REQUEST=false
+Restart=always
+TimeoutStopSec=70
+ExecStartPre=/bin/rm -f %t/%n.ctr-id
+ExecStart=/usr/bin/podman run \
+        --cidfile=%t/%n.ctr-id \
+        --cgroups=no-conmon \
+        --rm \
+        --sdnotify=conmon \
+        --replace \
+        --name=middleware_nectar-connector_1 \
+        -d \
+        --label io.podman.compose.config-hash=123 \
+        --label io.podman.compose.project=middleware \
+        --label io.podman.compose.version=0.0.1 \
+        --label com.docker.compose.project=middleware \
+        --label com.docker.compose.project.working_dir=/var/middleware/deployment \
+        --label com.docker.compose.project.config_files=/var/middleware/deployment/docker-compose.yml \
+        --label com.docker.compose.container-number=1 \
+        --label com.docker.compose.service=nectar-connector \
+        -e DB_HOST \
+        -e DB_PORT \
+        -e DB_USERNAME \
+        -e DB_PASSWORD \
+        -e DB_NAME \
+        -e NECTAR_URL_TEMPLATE \
+        -e HOSTS_PASSWORD_ENCRYPTION_KEY \
+        -e NECTAR_SHOULD_RETRY_REQUEST \
+        --net middleware_default \
+        --network-alias nectar-connector {{ lookup('env', 'CI_REGISTRY') }}/dwp/digital-channels-contact/contact2/testautomation/ta-middleware-java/nectar-connector-{{ lookup('env', 'ENVIRONMENT') }}:latest
+ExecStop=/usr/bin/podman stop --ignore --cidfile=%t/%n.ctr-id
+ExecStopPost=/usr/bin/podman rm -f --ignore --cidfile=%t/%n.ctr-id
+Type=notify
+NotifyAccess=all
+
+[Install]
+WantedBy=default.target

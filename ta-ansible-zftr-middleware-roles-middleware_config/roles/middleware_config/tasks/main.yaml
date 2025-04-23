@@ -1,0 +1,101 @@
+- name: Execute id command
+  command: id -u {{ ansible_user }}
+  register: ansible_user_uid
+
+- name: Set uid fact
+  ansible.builtin.set_fact: 
+    uid: "{{ ansible_user_uid.stdout }}"
+
+- name: Install firewalld
+  yum:
+    name: firewalld
+    state: present
+
+- name: Enable firewalld
+  ansible.builtin.systemd:
+    name: firewalld
+    enabled: yes
+    state: started
+
+- name: Ensure firewall rule in public zone for 8080
+  ansible.builtin.shell: sudo firewall-cmd --zone=public --permanent --add-port=8080/tcp && sudo firewall-cmd --reload
+
+- name: Create Middleware directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    recurse: yes
+    owner: "{{ hostvars['localhost']['admin_user'] }}"
+  with_items:
+    - '/var/middleware/deployment'
+    - '~/.config/containers'
+    - '~/.config/systemd/user'
+
+- name: User processes linger after session ends 
+  ansible.builtin.shell: "loginctl enable-linger $UID"
+
+# - name: Install dnf
+#   ansible.builtin.yum:
+#     name: dnf
+#     state: latest
+
+# - name: Install python2-dnf
+#   ansible.builtin.dnf:
+#     name: python2-dnf
+
+# - name: Update dnf
+#   ansible.builtin.shell: "sudo dnf update -y"
+
+# - name: Install the latest version of container-tools
+#   ansible.builtin.yum:
+#     name: "@container-tools"
+
+- name: Login to Middelware Container Registry
+  containers.podman.podman_login:
+    username: "{{ lookup('env', 'MIDDLEWARE_PAT_NAME') }}"
+    password: "{{ lookup('env', 'MIDDLEWARE_PAT_SECRET') }}"
+    registry: "{{ lookup('env', 'CI_REGISTRY') }}"
+
+- name: Copy storage config file
+  ansible.builtin.template:
+    src: "storage.conf.j2"
+    dest: "~/.config/containers/storage.conf"
+
+- name: Copy systemd unit files
+  ansible.builtin.template:
+    src: "{{ item }}"
+    dest: "~/.config/systemd/user/{{ item | basename | regex_replace('\\.j2$', '') }}"
+  with_items: 
+   - '{{ role_path }}/templates/middleware_api_1.service.j2'
+   - '{{ role_path }}/templates/middleware_frontend_1.service.j2'
+   - '{{ role_path }}/templates/middleware_nectar-connector_1.service.j2'
+   - '{{ role_path }}/templates/middleware_test-complete-connector_1.service.j2'
+   - '{{ role_path }}/templates/middleware_zephyr-connector_1.service.j2'
+
+- name: Get Middleware Network Info
+  containers.podman.podman_network_info:
+    name: middleware_default
+  changed_when: false
+  ignore_errors: true
+  register: podman_network_check
+
+- name: Check podman network
+  ansible.builtin.command: podman network create middleware_default
+  changed_when: false
+  when: podman_network_check is failed
+
+- name: Enable services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: yes
+    scope: user
+    state: started
+    daemon_reload: yes
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ uid }}"
+  with_items:
+   - middleware_api_1.service
+   - middleware_frontend_1.service
+   - middleware_nectar-connector_1.service
+   - middleware_test-complete-connector_1.service
+   - middleware_zephyr-connector_1.service
