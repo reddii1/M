@@ -1,0 +1,113 @@
+---
+- name: Allow port 8080 in the firewall
+  ansible.builtin.firewalld:
+    port: 8080/tcp
+    permanent: true
+    state: enabled
+    immediate: yes
+
+- name: Enable linger for testautomation user
+  ansible.builtin.command:
+    cmd: loginctl enable-linger testautomation
+  changed_when: false  # Idempotency workaround, as no native module exists
+
+- name: Install podman and container tools
+  ansible.builtin.dnf:
+    name:
+      - podman
+      - "@container-tools"
+    state: present
+
+- name: Install podman-compose via pip
+  ansible.builtin.pip:
+    name: podman-compose
+    executable: pip3
+    extra_args: --user
+
+- name: Create middleware deployment directory
+  ansible.builtin.file:
+    path: /var/middleware
+    state: directory
+    owner: testautomation
+    group: testautomation
+    mode: '0755'
+
+- name: Copy deployment files
+  ansible.builtin.copy:
+    src: deployment/
+    dest: /var/middleware/deployment/
+    owner: testautomation
+    group: testautomation
+    mode: '0755'
+
+- name: Create container storage config directory
+  become_user: testautomation
+  ansible.builtin.file:
+    path: ~/.config/containers
+    state: directory
+    mode: '0755'
+
+- name: Copy container storage config
+  become_user: testautomation
+  ansible.builtin.copy:
+    src: /var/middleware/deployment/storage.conf
+    dest: ~/.config/containers/storage.conf
+    owner: testautomation
+    group: testautomation
+    mode: '0644'
+
+- name: Set ownership on container storage
+  ansible.builtin.file:
+    path: /var/lib/containers
+    state: directory
+    recurse: yes
+    owner: testautomation
+    group: testautomation
+
+- name: Create systemd user directory
+  become_user: testautomation
+  ansible.builtin.file:
+    path: ~/.config/systemd/user
+    state: directory
+    mode: '0755'
+
+- name: Copy systemd unit files
+  become_user: testautomation
+  ansible.builtin.copy:
+    src: /var/middleware/deployment/systemd/{{ item }}
+    dest: ~/.config/systemd/user/{{ item }}
+    owner: testautomation
+    group: testautomation
+    mode: '0644'
+  loop:
+    - middleware_api_1.service
+    - middleware_zephyr-connector_1.service
+    - middleware_nectar-connector_1.service
+    - middleware_test-complete-connector_1.service
+
+- name: Create podman network
+  become_user: testautomation
+  ansible.builtin.command:
+    cmd: podman network create middleware_default
+    creates: /run/user/{{ ansible_user_uid }}/podman/networks/middleware_default  # Idempotency via creates
+  register: podman_network_result
+  changed_when: podman_network_result.rc == 0
+
+- name: Login to container registry
+  become_user: testautomation
+  ansible.builtin.command:
+    cmd: podman login registry.gitlab.com -u "{{ gitlab_user }}" -p "{{ gitlab_pass }}"
+    no_log: true  # Hide sensitive credentials
+  changed_when: false  # Login is not idempotent; avoid false positives
+
+- name: Enable middleware systemd services
+  become_user: testautomation
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: yes
+    scope: user
+  loop:
+    - middleware_api_1.service
+    - middleware_zephyr-connector_1.service
+    - middleware_nectar-connector_1.service
+    - middleware_test-complete-connector_1.service
