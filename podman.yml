@@ -1,0 +1,46 @@
+- name: Install Podman and Podman Compose with required prerequisites
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    - name: Install required dependencies for podman-compose
+      ansible.builtin.dnf:
+        name:
+          - python3
+          - python3-pip
+          - python3-setuptools
+          - gcc
+          - python3-devel
+          - libffi-devel
+          - openssl-devel
+        state: present
+
+    - name: Install Podman
+      ansible.builtin.dnf:
+        name: podman
+        state: present
+
+    - name: Ensure pip3 is installed and updated
+      ansible.builtin.pip:
+        name: pip
+        state: latest
+        executable: pip3
+
+    - name: Install podman-compose using pip3
+      ansible.builtin.pip:
+        name: podman-compose
+        executable: pip3
+        state: latest
+
+    - name: Confirm Podman and Podman-Compose versions
+      ansible.builtin.shell: |
+        podman --version
+        podman-compose --version
+      register: podman_versions
+      changed_when: false
+
+    - name: Show installed Podman and Podman-Compose versions
+      ansible.builtin.debug:
+        var: podman_versions.stdout_lines
