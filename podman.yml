@@ -44,3 +44,12 @@
     - name: Show installed Podman and Podman-Compose versions
       ansible.builtin.debug:
         var: podman_versions.stdout_lines
+
+- name: Find podman-compose installation path
+  ansible.builtin.shell: "which podman-compose"
+  register: podman_compose_path
+  changed_when: false
+
+- name: Show podman-compose installation path
+  ansible.builtin.debug:
+    var: podman_compose_path.stdout
