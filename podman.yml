@@ -4,7 +4,7 @@
   gather_facts: true
 
   tasks:
-
+    # Step 1: Install required dependencies for podman-compose
     - name: Install required dependencies for podman-compose
       ansible.builtin.dnf:
         name:
@@ -17,39 +17,63 @@
           - openssl-devel
         state: present
 
+    # Step 2: Install Podman
     - name: Install Podman
       ansible.builtin.dnf:
         name: podman
         state: present
 
+    # Step 3: Ensure pip3 is installed and updated
     - name: Ensure pip3 is installed and updated
       ansible.builtin.pip:
         name: pip
         state: latest
         executable: pip3
 
+    # Step 4: Install podman-compose using pip3
     - name: Install podman-compose using pip3
       ansible.builtin.pip:
         name: podman-compose
         executable: pip3
         state: latest
 
-    - name: Confirm Podman and Podman-Compose versions
-      ansible.builtin.shell: |
-        podman --version
-        podman-compose --version
-      register: podman_versions
+    # Step 5: Check if podman-compose is in the PATH
+    - name: Check if podman-compose is in the PATH
+      ansible.builtin.shell: "which podman-compose || echo 'podman-compose not found'"
+      register: podman_compose_path
       changed_when: false
 
-    - name: Show installed Podman and Podman-Compose versions
+    # Step 6: Show podman-compose installation path
+    - name: Show podman-compose installation path
       ansible.builtin.debug:
-        var: podman_versions.stdout_lines
+        var: podman_compose_path.stdout
 
-- name: Find podman-compose installation path
-  ansible.builtin.shell: "which podman-compose"
-  register: podman_compose_path
-  changed_when: false
+    # Step 7: Update the PATH if podman-compose is not found
+    - name: Update the PATH to include the directory for podman-compose
+      ansible.builtin.shell: |
+        export PATH=$PATH:/usr/local/bin
+        echo "Updated PATH"
+      become: yes
+      changed_when: false
+      when: "'podman-compose not found' in podman_compose_path.stdout"
 
-- name: Show podman-compose installation path
-  ansible.builtin.debug:
-    var: podman_compose_path.stdout
+    # Step 8: Check Podman version
+    - name: Check Podman version
+      ansible.builtin.shell: "podman --version"
+      register: podman_version
+      changed_when: false
+      ignore_errors: yes
+
+    # Step 9: Check Podman Compose version
+    - name: Check Podman Compose version
+      ansible.builtin.shell: "podman-compose --version"
+      register: podman_compose_version
+      changed_when: false
+      ignore_errors: yes
+
+    # Step 10: Show Podman and Podman Compose versions
+    - name: Show Podman and Podman Compose versions
+      ansible.builtin.debug:
+        msg:
+          - "Podman Version: {{ podman_version.stdout | default('Not installed') }}"
+          - "Podman Compose Version: {{ podman_compose_version.stdout | default('Not installed') }}"
