@@ -77,3 +77,39 @@
         msg:
           - "Podman Version: {{ podman_version.stdout | default('Not installed') }}"
           - "Podman Compose Version: {{ podman_compose_version.stdout | default('Not installed') }}"
+
+
+
+- name: Install Podman and Podman Compose on RHEL8
+  hosts: all
+  become: yes
+  tasks:
+
+    - name: Enable container-tools module for Podman
+      ansible.builtin.command:
+        cmd: dnf module enable -y container-tools
+      args:
+        creates: /etc/dnf/modules.d/container-tools.module
+
+    - name: Install Podman from container-tools module
+      ansible.builtin.dnf:
+        name: podman
+        state: present
+
+    - name: Install Python 3 and pip
+      ansible.builtin.dnf:
+        name:
+          - python3
+          - python3-pip
+        state: present
+
+    - name: Ensure pip is upgraded
+      ansible.builtin.pip:
+        name: pip
+        state: latest
+        executable: pip3
+
+    - name: Install podman-compose via pip
+      ansible.builtin.pip:
+        name: podman-compose
+        executable: pip3
