@@ -75,3 +75,12 @@ Store the git lab token so that podman can authenticate and pull the containers 
 
 
 podman login registry.gitlab.com  -u {{username}} -p '{{password}}' --authfile=${HOME}/.docker/config.json
+
+
+
+Ansible Podman Task Update:
+• Created the middleware_default network, but checking it needs sudo due to permissions.
+• Used become: true for network creation to get proper access.
+• Podman login/rootless commands require a proper user login session.
+• Enabled Podman socket/service with systemd and set linger to keep services running.
+• Tasks are progressing well after fixing permissions and user session issues.
